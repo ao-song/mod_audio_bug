@@ -298,12 +298,12 @@ static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void
 }
 
 switch_status_t fork_init() {
-    requestedBufferSecs = getenv("MOD_AUDIO_FORK_BUFFER_SECS");
+    requestedBufferSecs = getenv("MOD_AUDIO_BUG_BUFFER_SECS");
     nAudioBufferSecs = requestedBufferSecs ? atoi(requestedBufferSecs) : 2;
     if (nAudioBufferSecs < 1) nAudioBufferSecs = 1;
     if (nAudioBufferSecs > 5) nAudioBufferSecs = 5;
 
-    mySubProtocolName = getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME");
+    mySubProtocolName = getenv("MOD_AUDIO_BUG_SUBPROTOCOL_NAME");
     if (!mySubProtocolName) mySubProtocolName = "audio.drachtio.org";
 
     struct lws_context_creation_info info = {0};

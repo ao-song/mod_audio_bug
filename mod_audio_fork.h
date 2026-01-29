@@ -9,16 +9,16 @@
 #define MAX_WS_URL_LEN (512)
 #define MAX_PATH_LEN (128)
 
-#define EVENT_TRANSCRIPTION   "mod_audio_fork::transcription"
-#define EVENT_TRANSFER        "mod_audio_fork::transfer"
-#define EVENT_PLAY_AUDIO      "mod_audio_fork::play_audio"
-#define EVENT_KILL_AUDIO      "mod_audio_fork::kill_audio"
-#define EVENT_DISCONNECT      "mod_audio_fork::disconnect"
-#define EVENT_ERROR           "mod_audio_fork::error"
-#define EVENT_CONNECT_SUCCESS "mod_audio_fork::connect"
-#define EVENT_CONNECT_FAIL    "mod_audio_fork::connect_failed"
-#define EVENT_BUFFER_OVERRUN  "mod_audio_fork::buffer_overrun"
-#define EVENT_JSON            "mod_audio_fork::json"
+#define EVENT_TRANSCRIPTION   "mod_audio_bug::transcription"
+#define EVENT_TRANSFER        "mod_audio_bug::transfer"
+#define EVENT_PLAY_AUDIO      "mod_audio_bug::play_audio"
+#define EVENT_KILL_AUDIO      "mod_audio_bug::kill_audio"
+#define EVENT_DISCONNECT      "mod_audio_bug::disconnect"
+#define EVENT_ERROR           "mod_audio_bug::error"
+#define EVENT_CONNECT_SUCCESS "mod_audio_bug::connect"
+#define EVENT_CONNECT_FAIL    "mod_audio_bug::connect_failed"
+#define EVENT_BUFFER_OVERRUN  "mod_audio_bug::buffer_overrun"
+#define EVENT_JSON            "mod_audio_bug::json"
 
 #define MAX_METADATA_LEN (8192)
 

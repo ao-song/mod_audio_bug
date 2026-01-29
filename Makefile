@@ -1,5 +1,5 @@
-MODNAME=mod_audio_fork
-MODOBJ=mod_audio_fork.o lws_glue.o
+MODNAME=mod_audio_bug
+MODOBJ=mod_audio_bug.o lws_glue.o
 
 # Try to find FreeSwitch make include
 FS_MAKE=$(shell which freeswitch-config >/dev/null 2>&1 && freeswitch-config --prefix)/include/freeswitch/module_make.inc

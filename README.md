@@ -3,8 +3,8 @@
 A Freeswitch module that attaches a bug to a media server endpoint and streams L16 audio via websockets to a remote server.  This module also supports receiving media from the server to play back to the caller, enabling the creation of full-fledged IVR or dialog-type applications.
 
 #### Environment variables
-- MOD_AUDIO_FORK_SUBPROTOCOL_NAME - optional, name of the [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) to advertise; defaults to "audio.drachtio.org"
-- MOD_AUDIO_FORK_SERVICE_THREADS - optional, number of libwebsocket service threads to create; these threads handling sending all messages for all sessions.  Defaults to 1, but can be set to as many as 5.
+- MOD_AUDIO_BUG_SUBPROTOCOL_NAME - optional, name of the [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) to advertise; defaults to "audio.drachtio.org"
+- MOD_AUDIO_BUG_SERVICE_THREADS - optional, number of libwebsocket service threads to create; these threads handling sending all messages for all sessions.  Defaults to 1, but can be set to as many as 5.
 
 ## Build
 
@@ -70,7 +70,7 @@ The `audioContentType` value can be either `wave` or `raw`.  If the latter, then
 
 Note that the module does _not_ directly play out the raw audio.  Instead, it writes it to a temporary file and provides the path to the file in the event generated.  It is left to the application to play out this file if it wishes to do so.
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::play_audio
+**Name**: mod_audio_bug::play_audio
 **Body**: JSON string
 ```
 {
@@ -92,7 +92,7 @@ The server can provide a request to kill the current audio playback:
 Any current audio being played to the caller will be immediately stopped.  The event sent to the application is for information purposes only.
 
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::kill_audio
+**Name**: mod_audio_bug::kill_audio
 **Body**: JSON string - the data attribute from the server message
 
 
@@ -110,7 +110,7 @@ The server can optionally provide transcriptions to the application in real-time
 The transcription data can be any JSON object; for instance, a server may choose to return a transcript and an associated confidence level.  Whatever is provided as the `data` attribute will be attached to the generated event.
 
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::transcription
+**Name**: mod_audio_bug::transcription
 **Body**: JSON string - the data attribute from the server message
 
 #### transfer
@@ -127,7 +127,7 @@ The server can optionally provide a request to transfer the call:
 The transfer data can be any JSON object and is left for the application to determine how to handle it and accomplish the call transfer.  Whatever is provided as the `data` attribute will be attached to the generated event.
 
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::transfer
+**Name**: mod_audio_bug::transfer
 **Body**: JSON string - the data attribute from the server message
 
 #### disconnect
@@ -141,7 +141,7 @@ The server can optionally request to disconnect the caller:
 Note that the module _does not_ close the Freeswitch channel when a disconnect request is received.  It is left for the application to determine whether to tear down the call.
 
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::disconnect
+**Name**: mod_audio_bug::disconnect
 **Body**: none
 
 #### error
@@ -158,7 +158,7 @@ The server can optionally report an error of some kind.
 The error data can be any JSON object and is left for the application to the application to determine what, if any, action should be taken in response to an error..  Whatever is provided as the `data` attribute will be attached to the generated event.
 
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::error
+**Name**: mod_audio_bug::error
 **Body**: JSON string - the data attribute from the server message
 
 ## Usage

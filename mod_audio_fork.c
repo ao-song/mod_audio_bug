@@ -1,16 +1,16 @@
 /*
  *
- * mod_audio_fork.c -- Freeswitch module for forking audio to remote server over websockets
+ * mod_audio_bug.c -- Freeswitch module for forking audio to remote server over websockets
  *
  */
-#include "mod_audio_fork.h"
+#include "mod_audio_bug.h"
 #include "lws_glue.h"
 
-SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown);
-SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime);
-SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_bug_shutdown);
+SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_bug_runtime);
+SWITCH_MODULE_LOAD_FUNCTION(mod_audio_bug_load);
 
-SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, NULL /*mod_audio_fork_runtime*/);
+SWITCH_MODULE_DEFINITION(mod_audio_bug, mod_audio_bug_load, mod_audio_bug_shutdown, NULL /*mod_audio_bug_runtime*/);
 
 static void responseHandler(switch_core_session_t* session, const char * eventName, char * json) {
 	switch_event_t *event;
@@ -69,25 +69,25 @@ static switch_status_t start_capture(switch_core_session_t *session,
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
-    "mod_audio_fork: streaming %d sampling to %s path %s port %d tls: %s.\n",
+    "mod_audio_bug: streaming %d sampling to %s path %s port %d tls: %s.\n",
     sampling, host, path, port, sslFlags ? "yes" : "no");
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: bug already attached!\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_bug: bug already attached!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
 	read_codec = switch_core_session_get_read_codec(session);
 
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_bug: channel must have reached pre-answer status before calling start!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling fork_session_init.\n");
 	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second,
 		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_bug session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "adding bug.\n");
@@ -106,10 +106,10 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	if (text) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: stop w/ final text %s\n", text);
 	}
 	else {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: stop\n");
 	}
 	status = fork_session_cleanup(session, text, 0);
 
@@ -120,7 +120,7 @@ static switch_status_t do_pauseresume(switch_core_session_t *session, int pause)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: %s\n", pause ? "pause" : "resume");
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: %s\n", pause ? "pause" : "resume");
 	status = fork_session_pauseresume(session, pause);
 
 	return status;
@@ -142,11 +142,11 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
   if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: sending text: %s.\n", text);
     status = fork_session_send_text(session, text);
   }
   else {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: no bug, failed sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_bug: no bug, failed sending text: %s.\n", text);
   }
   return status;
 }
@@ -162,7 +162,7 @@ SWITCH_STANDARD_API(fork_function)
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
 	}
 	assert(cmd);
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mod_audio_fork cmd: %s\n", cmd);
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mod_audio_bug cmd: %s\n", cmd);
 
 
 	if (zstr(cmd) || argc < 2 ||
@@ -231,11 +231,11 @@ SWITCH_STANDARD_API(fork_function)
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid sample rate: %s\n", argv[4]);
 				}
         else {
-          status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, metadata, "mod_audio_fork");
+          status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, metadata, "mod_audio_bug");
         }
 			}
       else {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "unsupported mod_audio_fork cmd: %s\n", argv[1]);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "unsupported mod_audio_bug cmd: %s\n", argv[1]);
       }
 			switch_core_session_rwunlock(lsession);
 		}
@@ -257,11 +257,11 @@ SWITCH_STANDARD_API(fork_function)
 }
 
 
-SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
+SWITCH_MODULE_LOAD_FUNCTION(mod_audio_bug_load)
 {
 	switch_api_interface_t *api_interface;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork API loading..\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_bug API loading..\n");
 
 	/* connect my internal structure to the blank pointer passed to me */
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
@@ -274,7 +274,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
     switch_event_reserve_subclass(EVENT_ERROR) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_DISCONNECT) != SWITCH_STATUS_SUCCESS) {
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register an event subclass for mod_audio_fork API.\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register an event subclass for mod_audio_bug API.\n");
 		return SWITCH_STATUS_TERM;
 	}
 
@@ -285,7 +285,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 
 	fork_init();
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork API successfully loaded\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_bug API successfully loaded\n");
 
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
@@ -293,8 +293,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 
 /*
   Called when the system shuts down
-  Macro expands to: switch_status_t mod_audio_fork_shutdown() */
-SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
+  Macro expands to: switch_status_t mod_audio_bug_shutdown() */
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_bug_shutdown)
 {
 	fork_cleanup();
 	switch_event_free_subclass(EVENT_TRANSCRIPTION);
@@ -310,9 +310,9 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 /*
   If it exists, this is called in it's own thread when the module-load completes
   If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
-  Macro expands to: switch_status_t mod_audio_fork_runtime()
+  Macro expands to: switch_status_t mod_audio_bug_runtime()
 */
-SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime)
+SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_bug_runtime)
 {
 	return SWITCH_STATUS_TERM;
 }

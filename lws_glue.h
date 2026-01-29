@@ -1,7 +1,7 @@
 #ifndef __LWS_GLUE_H__
 #define __LWS_GLUE_H__
 
-#include "mod_audio_fork.h"
+#include "mod_audio_bug.h"
 
 int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
 
