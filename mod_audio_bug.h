@@ -1,10 +1,10 @@
-#ifndef __MOD_FORK_H__
-#define __MOD_FORK_H__
+#ifndef __MOD_BUG_H__
+#define __MOD_BUG_H__
 
 #include <switch.h>
 #include <unistd.h>
 
-#define MY_BUG_NAME "audio_fork"
+#define MY_BUG_NAME "audio_bug"
 #define MAX_SESSION_ID (256)
 #define MAX_WS_URL_LEN (512)
 #define MAX_PATH_LEN (128)

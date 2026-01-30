@@ -14,7 +14,7 @@ struct audio_buffer_t {
     size_t min_free;
 };
 
-struct fork_session_t {
+struct bug_session_t {
     struct lws *wsi;
     char *uuid;
     struct audio_buffer_t audio_buffer;
@@ -25,7 +25,7 @@ struct fork_session_t {
     private_t *tech_pvt;
     int connected;
     int graceful_shutdown;
-    struct fork_session_t *next;
+    struct bug_session_t *next;
 };
 
 struct lws_context_data {
@@ -33,7 +33,7 @@ struct lws_context_data {
     switch_thread_t *thread;
     int running;
     switch_mutex_t *action_mutex;
-    struct fork_session_t *pending_connects;
+    struct bug_session_t *pending_connects;
 };
 
 static struct lws_context_data g_lws_data = {0};
@@ -155,7 +155,7 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
 }
 
 static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
-    struct fork_session_t *fs = (struct fork_session_t *)user;
+    struct bug_session_t *fs = (struct bug_session_t *)user;
     switch_core_session_t *session;
     char err[512];
     unsigned char buf[LWS_PRE + MAX_METADATA_LEN];
@@ -271,7 +271,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
 
 static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void *obj) {
     struct lws_context_data *data = (struct lws_context_data *)obj;
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
     struct lws_client_connect_info i = {0};
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "LWS service thread started\n");
@@ -311,7 +311,7 @@ static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void
     return NULL;
 }
 
-switch_status_t fork_init() {
+switch_status_t bug_init() {
     struct lws_context_creation_info info = {0};
     switch_threadattr_t *thd_attr = NULL;
     int nAudioBufferSecs_local; // Local variable to hold result of atoi
@@ -323,7 +323,7 @@ switch_status_t fork_init() {
     nAudioBufferSecs = nAudioBufferSecs_local;
 
     mySubProtocolName = getenv("MOD_AUDIO_BUG_SUBPROTOCOL_NAME");
-    if (!mySubProtocolName) mySubProtocolName = "audio.drachtio.org";
+    if (!mySubProtocolName) mySubProtocolName = "itao.se";
 
     info.port = CONTEXT_PORT_NO_LISTEN;
     info.protocols = protocols;
@@ -349,7 +349,7 @@ switch_status_t fork_init() {
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_cleanup() {
+switch_status_t bug_cleanup() {
     g_lws_data.running = 0;
     lws_cancel_service(g_lws_data.context);
     // Wait for the service thread to exit to avoid races with lws_context_destroy
@@ -360,7 +360,7 @@ switch_status_t fork_cleanup() {
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_session_init(switch_core_session_t *session,
+switch_status_t bug_session_init(switch_core_session_t *session,
               responseHandler_t responseHandler,
               uint32_t samples_per_second,
               char *host,
@@ -373,7 +373,7 @@ switch_status_t fork_session_init(switch_core_session_t *session,
               void **ppUserData)
 {
     private_t* tech_pvt = (private_t *) malloc(sizeof(private_t));
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
     size_t buflen;
     int err;
 
@@ -393,12 +393,12 @@ switch_status_t fork_session_init(switch_core_session_t *session,
     tech_pvt->id = ++idxCallCount;
     if (metadata) strncpy(tech_pvt->initialMetadata, metadata, MAX_METADATA_LEN - 1);
 
-    fs = (struct fork_session_t *) malloc(sizeof(struct fork_session_t));
+    fs = (struct bug_session_t *) malloc(sizeof(struct bug_session_t));
     if (!fs) {
         free(tech_pvt);
         return SWITCH_STATUS_FALSE;
     }
-    memset(fs, 0, sizeof(struct fork_session_t));
+    memset(fs, 0, sizeof(struct bug_session_t));
     fs->uuid = strdup(tech_pvt->sessionId);
     fs->tech_pvt = tech_pvt;
 
@@ -436,13 +436,13 @@ switch_status_t fork_session_init(switch_core_session_t *session,
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
+switch_status_t bug_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     private_t* tech_pvt;
     struct playout* playout;
     struct playout *tmp;
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
 
 
     if (!bug) return SWITCH_STATUS_FALSE;
@@ -475,9 +475,9 @@ switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text,
     }
 
     // Close LWS
-    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct bug_session_t *)tech_pvt->pAudioPipe;
     if (fs) {
-        if (text) fork_session_send_text(session, text);
+        if (text) bug_session_send_text(session, text);
         // We can't easily force close from here safely without race conditions in pure C LWS without more complex signaling
         // But setting connected=0 and letting the session pool cleanup is standard FS way.
         // LWS will eventually timeout or we can signal it.
@@ -489,17 +489,17 @@ switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text,
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_session_send_text(switch_core_session_t *session, char* text) {
+switch_status_t bug_session_send_text(switch_core_session_t *session, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     private_t* tech_pvt;
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
 
     if (!bug) return SWITCH_STATUS_FALSE;
     tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
-    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct bug_session_t *)tech_pvt->pAudioPipe;
     if (fs && fs->connected) {
         switch_mutex_lock(fs->text_mutex);
         if (fs->text_buffer) free(fs->text_buffer);
@@ -511,7 +511,7 @@ switch_status_t fork_session_send_text(switch_core_session_t *session, char* tex
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pause) {
+switch_status_t bug_session_pauseresume(switch_core_session_t *session, int pause) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     private_t* tech_pvt;
@@ -525,18 +525,18 @@ switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pau
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session) {
+switch_status_t bug_session_graceful_shutdown(switch_core_session_t *session) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     private_t* tech_pvt;
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
 
     if (!bug) return SWITCH_STATUS_FALSE;
     tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
     tech_pvt->graceful_shutdown = 1;
-    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct bug_session_t *)tech_pvt->pAudioPipe;
     if (fs) {
         fs->graceful_shutdown = 1;
         lws_callback_on_writable(fs->wsi);
@@ -544,9 +544,9 @@ switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session) {
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
+switch_bool_t bug_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
-    struct fork_session_t *fs;
+    struct bug_session_t *fs;
     size_t available;
     switch_frame_t frame = { 0 };
     uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
@@ -555,7 +555,7 @@ switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug
 
     if (!tech_pvt || tech_pvt->audio_paused || tech_pvt->graceful_shutdown) return SWITCH_TRUE;
 
-    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct bug_session_t *)tech_pvt->pAudioPipe;
     if (!fs || !fs->connected) return SWITCH_TRUE;
 
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {

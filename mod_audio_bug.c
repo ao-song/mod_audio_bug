@@ -1,6 +1,6 @@
 /*
  *
- * mod_audio_bug.c -- Freeswitch module for forking audio to remote server over websockets
+ * mod_audio_bug.c -- Freeswitch module for buging audio to remote server over websockets
  *
  */
 #include "mod_audio_bug.h"
@@ -34,12 +34,12 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-      fork_session_cleanup(session, NULL, 1);
+      bug_session_cleanup(session, NULL, 1);
 		}
 		break;
 
 	case SWITCH_ABC_TYPE_READ:
-		return fork_frame(session, bug);
+		return bug_frame(session, bug);
 		break;
 
 	case SWITCH_ABC_TYPE_WRITE:
@@ -84,8 +84,8 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling fork_session_init.\n");
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second,
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling bug_session_init.\n");
+	if (SWITCH_STATUS_FALSE == bug_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second,
 		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_bug session.\n");
 		return SWITCH_STATUS_FALSE;
@@ -111,7 +111,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	else {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: stop\n");
 	}
-	status = fork_session_cleanup(session, text, 0);
+	status = bug_session_cleanup(session, text, 0);
 
 	return status;
 }
@@ -121,7 +121,7 @@ static switch_status_t do_pauseresume(switch_core_session_t *session, int pause)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: %s\n", pause ? "pause" : "resume");
-	status = fork_session_pauseresume(session, pause);
+	status = bug_session_pauseresume(session, pause);
 
 	return status;
 }
@@ -130,7 +130,7 @@ static switch_status_t do_graceful_shutdown(switch_core_session_t *session)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
-	status = fork_session_graceful_shutdown(session);
+	status = bug_session_graceful_shutdown(session);
 
 	return status;
 }
@@ -143,7 +143,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
 
   if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_bug: sending text: %s.\n", text);
-    status = fork_session_send_text(session, text);
+    status = bug_session_send_text(session, text);
   }
   else {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_bug: no bug, failed sending text: %s.\n", text);
@@ -151,8 +151,8 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
-SWITCH_STANDARD_API(fork_function)
+#define BUG_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
+SWITCH_STANDARD_API(bug_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
 	int argc = 0;
@@ -169,7 +169,7 @@ SWITCH_STANDARD_API(fork_function)
 		(0 == strcmp(argv[1], "start") && argc < 4)) {
 
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
-		stream->write_function(stream, "-USAGE: %s\n", FORK_API_SYNTAX);
+		stream->write_function(stream, "-USAGE: %s\n", BUG_API_SYNTAX);
 		goto done;
 	} else {
 		switch_core_session_t *lsession = NULL;
@@ -278,12 +278,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_bug_load)
 		return SWITCH_STATUS_TERM;
 	}
 
-	SWITCH_ADD_API(api_interface, "uuid_audio_fork", "audio_fork API", fork_function, FORK_API_SYNTAX);
-	switch_console_set_complete("add uuid_audio_fork start wss-url metadata");
-	switch_console_set_complete("add uuid_audio_fork start wss-url");
-	switch_console_set_complete("add uuid_audio_fork stop");
+	SWITCH_ADD_API(api_interface, "uuid_audio_bug", "audio_bug API", bug_function, BUG_API_SYNTAX);
+	switch_console_set_complete("add uuid_audio_bug start wss-url metadata");
+	switch_console_set_complete("add uuid_audio_bug start wss-url");
+	switch_console_set_complete("add uuid_audio_bug stop");
 
-	fork_init();
+	bug_init();
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_bug API successfully loaded\n");
 
@@ -296,7 +296,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_bug_load)
   Macro expands to: switch_status_t mod_audio_bug_shutdown() */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_bug_shutdown)
 {
-	fork_cleanup();
+	bug_cleanup();
 	switch_event_free_subclass(EVENT_TRANSCRIPTION);
 	switch_event_free_subclass(EVENT_TRANSFER);
 	switch_event_free_subclass(EVENT_PLAY_AUDIO);

@@ -3,7 +3,7 @@
 A Freeswitch module that attaches a bug to a media server endpoint and streams L16 audio via websockets to a remote server.  This module also supports receiving media from the server to play back to the caller, enabling the creation of full-fledged IVR or dialog-type applications.
 
 #### Environment variables
-- MOD_AUDIO_BUG_SUBPROTOCOL_NAME - optional, name of the [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) to advertise; defaults to "audio.drachtio.org"
+- MOD_AUDIO_BUG_SUBPROTOCOL_NAME - optional, name of the [websocket sub-protocol](hts://tools.ietf.org/html/rfc6455#section-1.9) to advertise; defaults to "itao.se"
 - MOD_AUDIO_BUG_SERVICE_THREADS - optional, number of libwebsocket service threads to create; these threads handling sending all messages for all sessions.  Defaults to 1, but can be set to as many as 5.
 
 ## Build
@@ -25,7 +25,7 @@ make install
 The freeswitch module exposes the following API commands:
 
 ```
-uuid_audio_fork <uuid> start <wss-url> <mix-type> <sampling-rate> <metadata>
+uuid_audio_bug <uuid> start <wss-url> <mix-type> <sampling-rate> <metadata>
 ```
 Attaches media bug and starts streaming audio stream to the back-end server.  Audio is streamed in linear 16 format (16-bit PCM encoding) with either one or two channels depending on the mix-type requested.
 - `uuid` - unique identifier of Freeswitch channel
@@ -40,12 +40,12 @@ Attaches media bug and starts streaming audio stream to the back-end server.  Au
 - `metadata` - a text frame of arbitrary data to send to the back-end server immediately upon connecting.  Once this text frame has been sent, the incoming audio will be sent in binary frames to the server.
 
 ```
-uuid_audio_fork <uuid> send_text <metadata>
+uuid_audio_bug <uuid> send_text <metadata>
 ```
 Send a text frame of arbitrary data to the remote server (e.g. this can be used to notify of DTMF events).
 
 ```
-uuid_audio_fork <uuid> stop <metadata>
+uuid_audio_bug <uuid> stop <metadata>
 ```
 Closes websocket connection and detaches media bug, optionally sending a final text frame over the websocket connection before closing.
 
@@ -160,39 +160,3 @@ The error data can be any JSON object and is left for the application to the app
 ##### Freeswitch event generated
 **Name**: mod_audio_bug::error
 **Body**: JSON string - the data attribute from the server message
-
-## Usage
-When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
-```js
-const url = 'https://70f21a76.ngrok.io';
-const callerData = {to: '6173333456', from: '2061236666', callid: req.get('Call-Id')};
-ep.api('uuid_audio_fork', `${ep.uuid} start ${url} mono 8k ${JSON.stringify(callerData)}`);
-```
-or, from version 1.4.1 on, by using the Endpoint convenience methods:
-```js
-await ep.forkAudioStart({
-  wsUrl,
-  mixType: 'stereo',
-  sampling: '16k',
-  metadata
-});
-..
-ep.forkAudioSendText(moremetadata);
-..
-ep.forkAudioStop(evenmoremetadata);
-```
-Each of the methods above returns a promise that resolves when the api command has been executed, or throws an error.
-## Examples
-[audio_fork.js](../../examples/audio_fork.js) provides an example of an application that connects an incoming call to Freeswitch and then forks the audio to a remote websocket server.
-
-To run this app, you can run [the simple websocket server provided](../../examples/ws_server.js) in a separate terminal.  It will listen on port 3001 and will simply write the incoming raw audio to `/tmp/audio.raw` in linear16 format with no header or file container.
-
-So in the first terminal window run:
-```
-node ws_server.js
-```
-And in the second window run:
-```
-node audio_fork.js http://localhost:3001
-```
-The app uses text-to-speech to play prompts, so you will need mod_google_tts loaded as well, and configured to use your GCS cloud credentials to access Google Cloud Text-to-Speech.  (If you don't want to run mod_google_tts you can of course simply modify the application remove the prompt, just be aware that you will hear silence when you connect, and should simply begin speaking after the call connects).
