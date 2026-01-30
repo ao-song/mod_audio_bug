@@ -44,13 +44,28 @@ static const char *mySubProtocolName;
 static unsigned int idxCallCount = 0;
 static uint32_t playCount = 0;
 
+static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
+
+static const struct lws_protocols protocols[] = {
+    {
+        "audio.drachtio.org",
+        lws_callback,
+        0,
+        4096,
+    },
+    { NULL, NULL, 0, 0 }
+};
+
 static void process_incoming_message(private_t* tech_pvt, switch_core_session_t* session, const char* message, size_t len) {
     cJSON *json = cJSON_Parse(message);
     if (json) {
         const char *type = cJSON_GetStringValue(cJSON_GetObjectItem(json, "type"));
         if (type) {
+            cJSON *jsonData;
+            char *jsonString = NULL;
+
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, type);
-            cJSON *jsonData = cJSON_GetObjectItem(json, "data");
+            jsonData = cJSON_GetObjectItem(json, "data");
 
             if (strcmp(type, "playAudio") == 0) {
                 if (jsonData) {
@@ -61,6 +76,13 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                     if (audioBase64 && szAudioContentType) {
                         char fileType[10] = ".r16";
                         int sampleRate = 16000;
+                        char szFilePath[256];
+                        int out_len;
+                        char *decoded;
+                        switch_file_t *fd;
+                        struct playout* playout;
+                        switch_size_t len_written;
+                        int decoded_len;
 
                         if (strcmp(szAudioContentType, "raw") == 0) {
                             cJSON *jsonSR = cJSON_GetObjectItem(jsonData, "sampleRate");
@@ -79,23 +101,21 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                             strcpy(fileType, "wave");
                         }
 
-                        char szFilePath[256];
                         switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir,
                             SWITCH_PATH_SEPARATOR, tech_pvt->sessionId, playCount++, fileType);
 
                         // Decode base64
-                        int out_len = strlen(audioBase64); // approximate
-                        char *decoded = malloc(out_len);
+                        out_len = strlen(audioBase64); // approximate
+                        decoded = malloc(out_len);
                         if (decoded) {
-                            int decoded_len = lws_b64_decode_string(audioBase64, decoded, out_len);
+                            decoded_len = lws_b64_decode_string(audioBase64, decoded, out_len);
                             if (decoded_len > 0) {
-                                switch_file_t *fd;
                                 if (switch_file_open(&fd, szFilePath, SWITCH_FOPEN_WRITE | SWITCH_FOPEN_CREATE | SWITCH_FOPEN_TRUNCATE | SWITCH_FOPEN_BINARY, SWITCH_FPROT_UREAD | SWITCH_FPROT_UWRITE, switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
-                                    switch_size_t len_written = decoded_len;
+                                    len_written = decoded_len;
                                     switch_file_write(fd, decoded, &len_written);
                                     switch_file_close(fd);
 
-                                    struct playout* playout = malloc(sizeof(struct playout));
+                                    playout = malloc(sizeof(struct playout));
                                     playout->file = strdup(szFilePath);
                                     playout->next = tech_pvt->playout;
                                     tech_pvt->playout = playout;
@@ -108,26 +128,26 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                     }
                     if (jsonAudio) cJSON_Delete(jsonAudio);
 
-                    char *jsonString = cJSON_PrintUnformatted(jsonData);
+                    jsonString = cJSON_PrintUnformatted(jsonData);
                     tech_pvt->responseHandler(session, EVENT_PLAY_AUDIO, jsonString);
                     free(jsonString);
+                } else if (strcmp(type, "killAudio") == 0) {
+                    switch_channel_t *channel = switch_core_session_get_channel(session);
+                    tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
+                    switch_channel_set_flag_value(channel, CF_BREAK, 2);
+                } else if (strcmp(type, "disconnect") == 0) {
+                    jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                    tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
+                    if (jsonString) free(jsonString);
+                } else {
+                    // Generic handler for other events
+                    jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                    if (strcmp(type, "transcription") == 0) tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
+                    else if (strcmp(type, "transfer") == 0) tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
+                    else if (strcmp(type, "error") == 0) tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
+                    else if (strcmp(type, "json") == 0) tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
+                    if (jsonString) free(jsonString);
                 }
-            } else if (strcmp(type, "killAudio") == 0) {
-                tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
-                switch_channel_t *channel = switch_core_session_get_channel(session);
-                switch_channel_set_flag_value(channel, CF_BREAK, 2);
-            } else if (strcmp(type, "disconnect") == 0) {
-                char *jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
-                tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
-                if (jsonString) free(jsonString);
-            } else {
-                // Generic handler for other events
-                char *jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
-                if (strcmp(type, "transcription") == 0) tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
-                else if (strcmp(type, "transfer") == 0) tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
-                else if (strcmp(type, "error") == 0) tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
-                else if (strcmp(type, "json") == 0) tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
-                if (jsonString) free(jsonString);
             }
         }
         cJSON_Delete(json);
@@ -136,6 +156,12 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
 
 static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
     struct fork_session_t *fs = (struct fork_session_t *)user;
+    switch_core_session_t *session;
+    char err[512];
+    unsigned char buf[LWS_PRE + MAX_METADATA_LEN];
+    size_t n;
+    int sent;
+
 
     switch (reason) {
         case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -143,7 +169,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
                 fs->connected = 1;
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "LWS_CALLBACK_CLIENT_ESTABLISHED for %s\n", fs->uuid);
 
-                switch_core_session_t *session = switch_core_session_locate(fs->uuid);
+                session = switch_core_session_locate(fs->uuid);
                 if (session) {
                     fs->tech_pvt->responseHandler(session, EVENT_CONNECT_SUCCESS, NULL);
                     // Send initial metadata if present
@@ -163,9 +189,8 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
         case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
             if (fs) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CONNECTION_ERROR for %s: %s\n", fs->uuid, in ? (char*)in : "(null)");
-                switch_core_session_t *session = switch_core_session_locate(fs->uuid);
+                session = switch_core_session_locate(fs->uuid);
                 if (session) {
-                    char err[512];
                     snprintf(err, sizeof(err), "{\"reason\":\"%s\"}", in ? (char*)in : "unknown");
                     fs->tech_pvt->responseHandler(session, EVENT_CONNECT_FAIL, err);
                     switch_core_session_rwunlock(session);
@@ -178,7 +203,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
             if (fs) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "LWS_CALLBACK_CLIENT_CLOSED for %s\n", fs->uuid);
                 if (fs->connected) {
-                    switch_core_session_t *session = switch_core_session_locate(fs->uuid);
+                    session = switch_core_session_locate(fs->uuid);
                     if (session) {
                         fs->tech_pvt->responseHandler(session, EVENT_DISCONNECT, NULL);
                         switch_core_session_rwunlock(session);
@@ -191,7 +216,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
 
         case LWS_CALLBACK_CLIENT_RECEIVE:
             if (fs && fs->connected) {
-                switch_core_session_t *session = switch_core_session_locate(fs->uuid);
+                session = switch_core_session_locate(fs->uuid);
                 if (session) {
                     process_incoming_message(fs->tech_pvt, session, (const char *)in, len);
                     switch_core_session_rwunlock(session);
@@ -204,8 +229,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
                 // Check for text to send
                 switch_mutex_lock(fs->text_mutex);
                 if (fs->text_buffer) {
-                    unsigned char buf[LWS_PRE + MAX_METADATA_LEN];
-                    size_t n = fs->text_len;
+                    n = fs->text_len;
                     if (n > MAX_METADATA_LEN) n = MAX_METADATA_LEN;
 
                     memcpy(&buf[LWS_PRE], fs->text_buffer, n);
@@ -221,7 +245,6 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
                 switch_mutex_unlock(fs->text_mutex);
 
                 if (fs->graceful_shutdown) {
-                    unsigned char buf[LWS_PRE];
                     lws_write(wsi, &buf[LWS_PRE], 0, LWS_WRITE_BINARY);
                     return 0;
                 }
@@ -230,7 +253,7 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
                 switch_mutex_lock(fs->audio_mutex);
                 if (fs->audio_buffer.write_pos > 0) {
                     size_t len = fs->audio_buffer.write_pos;
-                    int sent = lws_write(wsi, fs->audio_buffer.data + LWS_PRE_BUFFER, len, LWS_WRITE_BINARY);
+                    sent = lws_write(wsi, fs->audio_buffer.data + LWS_PRE_BUFFER, len, LWS_WRITE_BINARY);
                     if (sent < (int)len) {
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS write failed\n");
                     }
@@ -246,25 +269,17 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
     return 0;
 }
 
-static const struct lws_protocols protocols[] = {
-    {
-        "audio.drachtio.org",
-        lws_callback,
-        0,
-        4096,
-    },
-    { NULL, NULL, 0, 0 }
-};
-
 static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void *obj) {
     struct lws_context_data *data = (struct lws_context_data *)obj;
+    struct fork_session_t *fs;
+    struct lws_client_connect_info i = {0};
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "LWS service thread started\n");
 
     while (data->running) {
         // Process pending connects
         switch_mutex_lock(data->action_mutex);
-        struct fork_session_t *fs = data->pending_connects;
+        fs = data->pending_connects;
         if (fs) {
             data->pending_connects = fs->next;
             fs->next = NULL;
@@ -272,7 +287,6 @@ static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void
         switch_mutex_unlock(data->action_mutex);
 
         if (fs) {
-            struct lws_client_connect_info i = {0};
             i.context = data->context;
             i.address = fs->tech_pvt->host;
             i.port = fs->tech_pvt->port;
@@ -298,15 +312,19 @@ static void *SWITCH_THREAD_FUNC lws_service_thread(switch_thread_t *thread, void
 }
 
 switch_status_t fork_init() {
+    struct lws_context_creation_info info = {0};
+    switch_threadattr_t *thd_attr = NULL;
+    int nAudioBufferSecs_local; // Local variable to hold result of atoi
+
     requestedBufferSecs = getenv("MOD_AUDIO_BUG_BUFFER_SECS");
-    nAudioBufferSecs = requestedBufferSecs ? atoi(requestedBufferSecs) : 2;
-    if (nAudioBufferSecs < 1) nAudioBufferSecs = 1;
-    if (nAudioBufferSecs > 5) nAudioBufferSecs = 5;
+    nAudioBufferSecs_local = requestedBufferSecs ? atoi(requestedBufferSecs) : 2;
+    if (nAudioBufferSecs_local < 1) nAudioBufferSecs_local = 1;
+    if (nAudioBufferSecs_local > 5) nAudioBufferSecs_local = 5;
+    nAudioBufferSecs = nAudioBufferSecs_local;
 
     mySubProtocolName = getenv("MOD_AUDIO_BUG_SUBPROTOCOL_NAME");
     if (!mySubProtocolName) mySubProtocolName = "audio.drachtio.org";
 
-    struct lws_context_creation_info info = {0};
     info.port = CONTEXT_PORT_NO_LISTEN;
     info.protocols = protocols;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
@@ -322,7 +340,6 @@ switch_status_t fork_init() {
     g_lws_data.running = 1;
     switch_mutex_init(&g_lws_data.action_mutex, SWITCH_MUTEX_NESTED, NULL);
 
-    switch_threadattr_t *thd_attr = NULL;
     switch_threadattr_create(&thd_attr, NULL);
     // Create a joinable thread so we can reliably wait for it on cleanup
     switch_threadattr_detach_set(thd_attr, 0);
@@ -337,7 +354,7 @@ switch_status_t fork_cleanup() {
     lws_cancel_service(g_lws_data.context);
     // Wait for the service thread to exit to avoid races with lws_context_destroy
     if (g_lws_data.thread) {
-        switch_thread_join(&g_lws_data.thread);
+        switch_thread_join(NULL, g_lws_data.thread);
     }
     lws_context_destroy(g_lws_data.context);
     return SWITCH_STATUS_SUCCESS;
@@ -355,9 +372,11 @@ switch_status_t fork_session_init(switch_core_session_t *session,
               char* metadata,
               void **ppUserData)
 {
-    // Allocate control structures on the heap so the LWS thread can safely
-    // reference them independent of the FreeSWITCH session memory pool.
     private_t* tech_pvt = (private_t *) malloc(sizeof(private_t));
+    struct fork_session_t *fs;
+    size_t buflen;
+    int err;
+
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
     memset(tech_pvt, 0, sizeof(private_t));
@@ -374,7 +393,7 @@ switch_status_t fork_session_init(switch_core_session_t *session,
     tech_pvt->id = ++idxCallCount;
     if (metadata) strncpy(tech_pvt->initialMetadata, metadata, MAX_METADATA_LEN - 1);
 
-    struct fork_session_t *fs = (struct fork_session_t *) malloc(sizeof(struct fork_session_t));
+    fs = (struct fork_session_t *) malloc(sizeof(struct fork_session_t));
     if (!fs) {
         free(tech_pvt);
         return SWITCH_STATUS_FALSE;
@@ -384,7 +403,7 @@ switch_status_t fork_session_init(switch_core_session_t *session,
     fs->tech_pvt = tech_pvt;
 
     // Allocate audio buffer on the heap
-    size_t buflen = LWS_PRE_BUFFER + (FRAME_SIZE_8000 * sampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
+    buflen = LWS_PRE_BUFFER + (FRAME_SIZE_8000 * sampling / 8000 * tech_pvt->channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
     fs->audio_buffer.data = (uint8_t *) malloc(buflen);
     fs->audio_buffer.len = buflen;
     fs->audio_buffer.min_free = buflen / 2; // Simple heuristic
@@ -399,8 +418,7 @@ switch_status_t fork_session_init(switch_core_session_t *session,
 
     // Resampler
     if (sampling != samples_per_second) {
-        int err;
-        tech_pvt->resampler = speex_resampler_init(channels, samples_per_second, sampling, 5, &err);
+        tech_pvt->resampler = speex_resampler_init(tech_pvt->channels, samples_per_second, sampling, 5, &err);
         if (err != 0) {
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler\n");
             // Leave tech_pvt/fs allocated to avoid use-after-free; they'll be reclaimed on process exit or module unload.
@@ -421,9 +439,15 @@ switch_status_t fork_session_init(switch_core_session_t *session,
 switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    private_t* tech_pvt;
+    struct playout* playout;
+    struct playout *tmp;
+    struct fork_session_t *fs;
+
+
     if (!bug) return SWITCH_STATUS_FALSE;
 
-    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
     switch_mutex_lock(tech_pvt->mutex);
@@ -435,11 +459,11 @@ switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text,
     }
 
     // Cleanup temp files
-    struct playout* playout = tech_pvt->playout;
+    playout = tech_pvt->playout;
     while (playout) {
         unlink(playout->file);
         free(playout->file);
-        struct playout *tmp = playout;
+        tmp = playout;
         playout = playout->next;
         free(tmp);
     }
@@ -451,7 +475,7 @@ switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text,
     }
 
     // Close LWS
-    struct fork_session_t *fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
     if (fs) {
         if (text) fork_session_send_text(session, text);
         // We can't easily force close from here safely without race conditions in pure C LWS without more complex signaling
@@ -468,11 +492,14 @@ switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text,
 switch_status_t fork_session_send_text(switch_core_session_t *session, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    private_t* tech_pvt;
+    struct fork_session_t *fs;
+
     if (!bug) return SWITCH_STATUS_FALSE;
-    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
-    struct fork_session_t *fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
     if (fs && fs->connected) {
         switch_mutex_lock(fs->text_mutex);
         if (fs->text_buffer) free(fs->text_buffer);
@@ -487,8 +514,10 @@ switch_status_t fork_session_send_text(switch_core_session_t *session, char* tex
 switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pause) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    private_t* tech_pvt;
+
     if (!bug) return SWITCH_STATUS_FALSE;
-    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
     switch_core_media_bug_flush(bug);
@@ -499,12 +528,15 @@ switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pau
 switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    private_t* tech_pvt;
+    struct fork_session_t *fs;
+
     if (!bug) return SWITCH_STATUS_FALSE;
-    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
 
     tech_pvt->graceful_shutdown = 1;
-    struct fork_session_t *fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
     if (fs) {
         fs->graceful_shutdown = 1;
         lws_callback_on_writable(fs->wsi);
@@ -514,15 +546,22 @@ switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session) {
 
 switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    struct fork_session_t *fs;
+    size_t available;
+    switch_frame_t frame = { 0 };
+    uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
+    spx_uint32_t out_len;
+    spx_uint32_t in_len;
+
     if (!tech_pvt || tech_pvt->audio_paused || tech_pvt->graceful_shutdown) return SWITCH_TRUE;
 
-    struct fork_session_t *fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
+    fs = (struct fork_session_t *)tech_pvt->pAudioPipe;
     if (!fs || !fs->connected) return SWITCH_TRUE;
 
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
         switch_mutex_lock(fs->audio_mutex);
 
-        size_t available = fs->audio_buffer.len - fs->audio_buffer.write_pos;
+        available = fs->audio_buffer.len - fs->audio_buffer.write_pos;
 
         if (available < fs->audio_buffer.min_free) {
              if (!tech_pvt->buffer_overrun_notified) {
@@ -536,7 +575,6 @@ switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug
         }
 
         if (!tech_pvt->resampler) {
-            switch_frame_t frame = { 0 };
             frame.data = fs->audio_buffer.data + LWS_PRE_BUFFER + fs->audio_buffer.write_pos;
             frame.buflen = available;
 
@@ -550,15 +588,13 @@ switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug
                 }
             }
         } else {
-            uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-            switch_frame_t frame = { 0 };
             frame.data = data;
             frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
             while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
                 if (frame.datalen) {
-                    spx_uint32_t out_len = (available - fs->audio_buffer.write_pos) / 2;
-                    spx_uint32_t in_len = frame.samples;
+                    out_len = (available - fs->audio_buffer.write_pos) / 2;
+                    in_len = frame.samples;
 
                     speex_resampler_process_interleaved_int(tech_pvt->resampler,
                         (const spx_int16_t *)frame.data,
@@ -589,8 +625,12 @@ switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug
 int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags) {
     char *p;
     char server[MAX_WS_URL_LEN];
+    char *h;
+    char *pth;
+    char *pt;
 
-    strncpy(server, szServerUri, MAX_WS_URL_LEN);
+    strncpy(server, szServerUri, MAX_WS_URL_LEN - 1);
+    server[MAX_WS_URL_LEN - 1] = '\0';
 
     if ((p = strstr(server, "://"))) {
         if (strncasecmp(server, "wss", 3) == 0 || strncasecmp(server, "https", 5) == 0) {
@@ -607,8 +647,8 @@ int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host,
         *pPort = 80;
     }
 
-    char *h = p;
-    char *pth = strchr(h, '/');
+    h = p;
+    pth = strchr(h, '/');
     if (pth) {
         *pth = '\0';
         pth++;
@@ -617,7 +657,7 @@ int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host,
         strcpy(path, "/");
     }
 
-    char *pt = strchr(h, ':');
+    pt = strchr(h, ':');
     if (pt) {
         *pt = '\0';
         pt++;
