@@ -48,12 +48,12 @@ static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void 
 
 static const struct lws_protocols protocols[] = {
     {
-        "audio.drachtio.org",
-        lws_callback,
-        0,
-        4096,
+        .name = "itao.se",
+        .callback = lws_callback,
+        .per_session_data_size = 0,
+        .rx_buffer_size = 4096,
     },
-    { NULL, NULL, 0, 0 }
+    { .name = NULL, .callback = NULL, .per_session_data_size = 0, .rx_buffer_size = 0 }
 };
 
 static void process_incoming_message(private_t* tech_pvt, switch_core_session_t* session, const char* message, size_t len) {
@@ -77,7 +77,8 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                         char fileType[10] = ".r16";
                         int sampleRate = 16000;
                         char szFilePath[256];
-                        int out_len;
+                        size_t base64_len;
+                        size_t decode_buf_len;
                         char *decoded;
                         switch_file_t *fd;
                         struct playout* playout;
@@ -97,18 +98,19 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                                 case 64000: strcpy(fileType, ".r64"); break;
                                 default: strcpy(fileType, ".r16"); break;
                             }
-                        } else if (strcmp(szAudioContentType, ".wave") == 0) {
-                            strcpy(fileType, "wave");
+                        } else if (strcmp(szAudioContentType, "wave") == 0) {
+                            strcpy(fileType, ".wav");
                         }
 
                         switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir,
                             SWITCH_PATH_SEPARATOR, tech_pvt->sessionId, playCount++, fileType);
 
-                        // Decode base64
-                        out_len = strlen(audioBase64); // approximate
-                        decoded = malloc(out_len);
+                        // Decode base64 - allocate proper size for decoded output
+                        base64_len = strlen(audioBase64);
+                        decode_buf_len = (base64_len * 3 / 4) + 2;
+                        decoded = malloc(decode_buf_len);
                         if (decoded) {
-                            decoded_len = lws_b64_decode_string(audioBase64, decoded, out_len);
+                            decoded_len = lws_b64_decode_string(audioBase64, decoded, decode_buf_len);
                             if (decoded_len > 0) {
                                 if (switch_file_open(&fd, szFilePath, SWITCH_FOPEN_WRITE | SWITCH_FOPEN_CREATE | SWITCH_FOPEN_TRUNCATE | SWITCH_FOPEN_BINARY, SWITCH_FPROT_UREAD | SWITCH_FPROT_UWRITE, switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
                                     len_written = decoded_len;
@@ -131,23 +133,31 @@ static void process_incoming_message(private_t* tech_pvt, switch_core_session_t*
                     jsonString = cJSON_PrintUnformatted(jsonData);
                     tech_pvt->responseHandler(session, EVENT_PLAY_AUDIO, jsonString);
                     free(jsonString);
-                } else if (strcmp(type, "killAudio") == 0) {
-                    switch_channel_t *channel = switch_core_session_get_channel(session);
-                    tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
-                    switch_channel_set_flag_value(channel, CF_BREAK, 2);
-                } else if (strcmp(type, "disconnect") == 0) {
-                    jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
-                    tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
-                    if (jsonString) free(jsonString);
-                } else {
-                    // Generic handler for other events
-                    jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
-                    if (strcmp(type, "transcription") == 0) tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
-                    else if (strcmp(type, "transfer") == 0) tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
-                    else if (strcmp(type, "error") == 0) tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
-                    else if (strcmp(type, "json") == 0) tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
-                    if (jsonString) free(jsonString);
                 }
+            } else if (strcmp(type, "killAudio") == 0) {
+                switch_channel_t *channel = switch_core_session_get_channel(session);
+                tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
+                switch_channel_set_flag_value(channel, CF_BREAK, 2);
+            } else if (strcmp(type, "disconnect") == 0) {
+                jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
+                if (jsonString) free(jsonString);
+            } else if (strcmp(type, "transcription") == 0) {
+                jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
+                if (jsonString) free(jsonString);
+            } else if (strcmp(type, "transfer") == 0) {
+                jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
+                if (jsonString) free(jsonString);
+            } else if (strcmp(type, "error") == 0) {
+                jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
+                if (jsonString) free(jsonString);
+            } else if (strcmp(type, "json") == 0) {
+                jsonString = jsonData ? cJSON_PrintUnformatted(jsonData) : NULL;
+                tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
+                if (jsonString) free(jsonString);
             }
         }
         cJSON_Delete(json);
@@ -350,12 +360,39 @@ switch_status_t bug_init() {
 }
 
 switch_status_t bug_cleanup() {
+    struct bug_session_t *fs;
+
     g_lws_data.running = 0;
     lws_cancel_service(g_lws_data.context);
+
     // Wait for the service thread to exit to avoid races with lws_context_destroy
     if (g_lws_data.thread) {
         switch_thread_join(NULL, g_lws_data.thread);
     }
+
+    // Drain pending_connects list to avoid memory leaks
+    switch_mutex_lock(g_lws_data.action_mutex);
+    while (g_lws_data.pending_connects) {
+        fs = g_lws_data.pending_connects;
+        g_lws_data.pending_connects = fs->next;
+
+        // Cleanup session resources
+        if (fs->uuid) free(fs->uuid);
+        if (fs->text_buffer) free(fs->text_buffer);
+        if (fs->audio_buffer.data) free(fs->audio_buffer.data);
+        switch_mutex_destroy(fs->audio_mutex);
+        switch_mutex_destroy(fs->text_mutex);
+        if (fs->tech_pvt) {
+            if (fs->tech_pvt->resampler) {
+                speex_resampler_destroy(fs->tech_pvt->resampler);
+            }
+            switch_mutex_destroy(fs->tech_pvt->mutex);
+            free(fs->tech_pvt);
+        }
+        free(fs);
+    }
+    switch_mutex_unlock(g_lws_data.action_mutex);
+
     lws_context_destroy(g_lws_data.context);
     return SWITCH_STATUS_SUCCESS;
 }
@@ -421,7 +458,14 @@ switch_status_t bug_session_init(switch_core_session_t *session,
         tech_pvt->resampler = speex_resampler_init(tech_pvt->channels, samples_per_second, sampling, 5, &err);
         if (err != 0) {
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler\n");
-            // Leave tech_pvt/fs allocated to avoid use-after-free; they'll be reclaimed on process exit or module unload.
+            // Cleanup on resampler init failure
+            free(fs->uuid);
+            free(fs->audio_buffer.data);
+            switch_mutex_destroy(fs->audio_mutex);
+            switch_mutex_destroy(fs->text_mutex);
+            switch_mutex_destroy(tech_pvt->mutex);
+            free(fs);
+            free(tech_pvt);
             return SWITCH_STATUS_FALSE;
         }
     }
