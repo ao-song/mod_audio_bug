@@ -1,3 +1,6 @@
+# NOT TESTED: Notice that this project is not tested yet. But you are free to use or update based on it.😊
+
+
 # mod_audio_bug
 
 A Freeswitch module that attaches a bug to a media server endpoint and streams L16 audio via websockets to a remote server.  This module also supports receiving media from the server to play back to the caller, enabling the creation of full-fledged IVR or dialog-type applications.
